@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>노후 자산 시뮬레이터 (개인연금 계산기)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f4f6f8; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #2c3e50; margin-bottom: 30px; font-size: 24px; }
+        
+        .input-group { display: flex; flex-wrap: wrap; gap: 20px; justify-content: space-between; margin-bottom: 20px; }
+        .input-box { flex: 1 1 45%; display: flex; flex-direction: column; }
+        label { font-size: 14px; margin-bottom: 5px; font-weight: 500; color: #555; }
+        input { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; transition: 0.3s; }
+        input:focus { border-color: #4a90e2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1); }
+        
+        button { width: 100%; padding: 15px; background-color: #4a90e2; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: 700; cursor: pointer; margin-top: 10px; transition: 0.2s; }
+        button:hover { background-color: #357abd; transform: translateY(-2px); }
+        
+        .result-section { margin-top: 40px; text-align: center; display: none; /* 계산 전엔 숨김 */ }
+        .chart-container { position: relative; height: 400px; width: 100%; margin-top: 20px; }
+        .highlight { color: #4a90e2; font-weight: bold; }
+        .summary-box { background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📈 내 노후 자산은 얼마일까? (100세 기준)</h1>
+    
+    <div class="input-group">
+        <div class="input-box">
+            <label>현재 나이 (세)</label>
+            <input type="number" id="startAge" value="30">
+        </div>
+        <div class="input-box">
+            <label>연 수익률 (%)</label>
+            <input type="number" id="rate" value="10">
+        </div>
+        <div class="input-box">
+            <label>월 납입금 (만원)</label>
+            <input type="number" id="monthlyAmount" value="10">
+        </div>
+        <div class="input-box">
+            <label>연금 수령 시작 나이 (세)</label>
+            <input type="number" id="targetAge" value="55">
+        </div>
+        <div class="input-box">
+            <label>연 희망 수령액 (만원)</label>
+            <input type="number" id="withdrawAmount" value="1500">
+        </div>
+    </div>
+
+    <button onclick="calculatePension()">계산하기</button>
+
+    <div class="result-section" id="resultSection">
+        <div class="summary-box">
+            <p>자산이 최대 <span class="highlight" id="peakAsset">0억 0000만</span>원까지 모입니다.</p>
+            <p><span class="highlight" id="peakAge">00</span>세 이후 매년 <span id="displayWithdraw">0</span>만원씩 쓰면, <span class="highlight" id="emptyAge" style="color:#e74c3c;">00</span>세에 자산이 고갈됩니다.</p>
+        </div>
+        <div class="chart-container">
+            <canvas id="pensionChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    let myChart = null;
+
+    function calculatePension() {
+        // 1. 입력값 가져오기
+        const startAge = parseInt(document.getElementById('startAge').value);
+        const rate = parseFloat(document.getElementById('rate').value) / 100;
+        const monthlyAmount = parseInt(document.getElementById('monthlyAmount').value);
+        const targetAge = parseInt(document.getElementById('targetAge').value);
+        const withdrawAmount = parseInt(document.getElementById('withdrawAmount').value);
+
+        // 유효성 검사
+        if (startAge >= targetAge) {
+            alert("수령 나이는 현재 나이보다 많아야 합니다.");
+            return;
+        }
+
+        // 2. 계산 로직 (엑셀 로직 반영)
+        let labels = []; // X축: 나이
+        let data = [];   // Y축: 자산
+        let currentAsset = 0;
+        let maxAsset = 0;
+        let depletionAge = null;
+
+        // 시뮬레이션: 현재 나이부터 100세까지
+        for (let age = startAge; age <= 100; age++) {
+            labels.push(age + "세");
+            
+            if (age === startAge) {
+                // 첫 해는 0원부터 시작 (혹은 0원)
+                currentAsset = 0; 
+            } else if (age <= targetAge) {
+                // [적립기]
+                // 엑셀 로직: (전년도 자산 * (1+수익률)) + (월납입금 * 12)
+                // *주의: 월복리가 정확하나 엑셀 파일 로직인 '연 단위 불입'으로 단순화 구현
+                currentAsset = (currentAsset * (1 + rate)) + (monthlyAmount * 12);
+            } else {
+                // [수령기]
+                // 엑셀 로직: (전년도 자산 * (1+수익률)) - 연간수령액
+                currentAsset = (currentAsset * (1 + rate)) - withdrawAmount;
+            }
+
+            // 자산이 0 미만이 되면 멈춤 (고갈)
+            if (currentAsset < 0) {
+                currentAsset = 0;
+                if (!depletionAge) depletionAge = age; // 고갈된 나이 기록
+            }
+
+            // 최대 자산 기록
+            if (currentAsset > maxAsset) maxAsset = currentAsset;
+
+            data.push(Math.round(currentAsset));
+        }
+
+        // 3. 결과 텍스트 업데이트
+        document.getElementById('resultSection').style.display = 'block';
+        document.getElementById('peakAge').innerText = targetAge;
+        document.getElementById('peakAsset').innerText = formatMoney(maxAsset);
+        document.getElementById('displayWithdraw').innerText = withdrawAmount.toLocaleString();
+        
+        if (depletionAge) {
+            document.getElementById('emptyAge').innerText = depletionAge;
+            document.getElementById('emptyAge').style.color = "#e74c3c"; // 빨간색
+        } else {
+            document.getElementById('emptyAge').innerText = "100세 이상";
+            document.getElementById('emptyAge').style.color = "#2ecc71"; // 초록색
+        }
+
+        // 4. 차트 그리기 (Chart.js)
+        drawChart(labels, data, targetAge - startAge);
+    }
+
+    // 금액 포맷팅 함수 (예: 1억 5000만)
+    function formatMoney(amount) {
+        if (amount >= 10000) {
+            const eok = Math.floor(amount / 10000);
+            const man = Math.round(amount % 10000);
+            return eok + "억 " + (man > 0 ? man + "만" : "");
+        }
+        return Math.round(amount) + "만";
+    }
+
+    function drawChart(labels, data, peakIndex) {
+        const ctx = document.getElementById('pensionChart').getContext('2d');
+
+        // 기존 차트가 있으면 삭제 (중복 방지)
+        if (myChart) myChart.destroy();
+
+        // 적립 구간과 수령 구간 색상 다르게 하기는 복잡하므로 단일 컬러 혹은 그라데이션 사용
+        // 여기서는 심플하게 파란색으로 통일하되, 배경색을 입힘
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '총 자산 (만원)',
+                    data: data,
+                    borderColor: '#4a90e2',
+                    backgroundColor: 'rgba(74, 144, 226, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    pointRadius: 0, // 포인트 숨김 (깔끔하게)
+                    pointHitRadius: 10,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return formatMoney(context.raw) + "원";
+                            }
+                        }
+                    },
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { borderDash: [5, 5] }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
