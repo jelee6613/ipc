@@ -8,11 +8,13 @@
     'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
     })(window,document,'script','dataLayer','GTM-W6MMMFDL');</script>
     <!-- End Google Tag Manager -->
-    
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>개인연금계좌 계산기</title>
+    <title>개인연금 계산기</title>
+    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;500;700&display=swap" rel="stylesheet">
     
     <style>
@@ -26,13 +28,20 @@
         input { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; transition: 0.3s; }
         input:focus { border-color: #4a90e2; box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1); }
         
-        button { width: 100%; padding: 15px; background-color: #4a90e2; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: 700; cursor: pointer; margin-top: 10px; transition: 0.2s; }
-        button:hover { background-color: #357abd; transform: translateY(-2px); }
+        /* 메인 버튼 (계산하기) */
+        .btn-calc { width: 100%; padding: 15px; background-color: #4a90e2; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: 700; cursor: pointer; margin-top: 10px; transition: 0.2s; }
+        .btn-calc:hover { background-color: #357abd; transform: translateY(-2px); }
+
+        /* 엑셀 다운로드 버튼 (초록색) */
+        .btn-excel { width: 100%; padding: 12px; background-color: #27ae60; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 15px; display: none; transition: 0.2s; }
+        .btn-excel:hover { background-color: #219150; transform: translateY(-2px); }
         
-        .result-section { margin-top: 40px; text-align: center; display: none; /* 계산 전엔 숨김 */ }
+        .result-section { margin-top: 40px; text-align: center; display: none; }
         .chart-container { position: relative; height: 400px; width: 100%; margin-top: 20px; }
-        .highlight { color: #4a90e2; font-weight: bold; }
-        .summary-box { background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .highlight { color: #4a90e2; font-weight: bold; font-size: 1.1em; }
+        .summary-box { background: #f8f9fa; padding: 25px; border-radius: 10px; margin-bottom: 20px; line-height: 1.8; text-align: left; }
+        .summary-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 5px 0; }
+        .summary-item:last-child { border-bottom: none; }
     </style>
 </head>
 <body>
@@ -41,21 +50,22 @@
     height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <!-- End Google Tag Manager (noscript) -->
 
+
 <div class="container">
-    <h1>📈 개인연금계좌 계산기 (100세 기준)</h1>
+    <h1>📈 개인연금 계산기 (100세 기준)</h1>
     
     <div class="input-group">
         <div class="input-box">
-            <label>현재 나이 (세)</label>
+            <label>시작 나이 (세)</label>
             <input type="number" id="startAge" value="30">
         </div>
         <div class="input-box">
-            <label>연 예상 수익률 (%)</label>
+            <label>연 수익률 (%)</label>
             <input type="number" id="rate" value="10">
         </div>
         <div class="input-box">
             <label>월 납입금 (만원)</label>
-            <input type="number" id="monthlyAmount" value="10">
+            <input type="number" id="monthlyAmount" value="50">
         </div>
         <div class="input-box">
             <label>연금 수령 시작 나이 (세)</label>
@@ -63,26 +73,39 @@
         </div>
         <div class="input-box">
             <label>연 희망 수령액 (만원)</label>
-            <input type="number" id="withdrawAmount" value="1500">
+            <input type="number" id="withdrawAmount" value="2000">
         </div>
     </div>
 
-    <button onclick="calculatePension()">계산하기</button>
+    <button class="btn-calc" onclick="calculatePension()">계산하기</button>
 
     <div class="result-section" id="resultSection">
         <div class="summary-box">
-            <p>자산이 최대 <span class="highlight" id="peakAsset">0억 0000만</span>원까지 모입니다.</p>
-            <p><span class="highlight" id="peakAge">00</span>세 이후 매년 <span id="displayWithdraw">0</span>만원씩 쓰면,</p>
-            <p><span class="highlight" id="emptyAge" style="color:#e74c3c;">00</span>세에 자산이 고갈됩니다..</p></p
+            <div class="summary-item">
+                <span>💰 총 납입한 원금</span>
+                <span class="highlight" style="color: #555;" id="totalPrincipal">0만원</span>
+            </div>
+            <div class="summary-item">
+                <span>🚀 불어난 최대 자산 (<span id="peakAge">00</span>세)</span>
+                <span class="highlight" id="peakAsset">0만원</span>
+            </div>
+            <div class="summary-item">
+                <span>💸 자산 고갈 나이</span>
+                <span class="highlight" id="emptyAge" style="color:#e74c3c;">00세</span>
+            </div>
         </div>
+
         <div class="chart-container">
             <canvas id="pensionChart"></canvas>
         </div>
+
+        <button class="btn-excel" id="excelBtn" onclick="downloadExcel()">📊 엑셀 파일로 다운로드</button>
     </div>
 </div>
 
 <script>
     let myChart = null;
+    let excelData = []; // 엑셀 저장을 위한 전역 데이터
 
     function calculatePension() {
         // 1. 입력값 가져오기
@@ -92,85 +115,117 @@
         const targetAge = parseInt(document.getElementById('targetAge').value);
         const withdrawAmount = parseInt(document.getElementById('withdrawAmount').value);
 
-        // 유효성 검사
         if (startAge >= targetAge) {
             alert("수령 나이는 현재 나이보다 많아야 합니다.");
             return;
         }
 
-        // 2. 계산 로직 (엑셀 로직 반영)
-        let labels = []; // X축: 나이
-        let data = [];   // Y축: 자산
+        // 2. 초기화
+        let labels = []; 
+        let data = [];
+        excelData = []; // 엑셀 데이터 초기화
+        
         let currentAsset = 0;
         let maxAsset = 0;
         let depletionAge = null;
 
-        // 시뮬레이션: 현재 나이부터 100세까지
+        // 총 납입 원금 계산: (납입 기간 연수) * 12개월 * 월납입액
+        const totalPrincipal = (targetAge - startAge) * 12 * monthlyAmount;
+
+        // 3. 시뮬레이션 로직
         for (let age = startAge; age <= 100; age++) {
             labels.push(age + "세");
             
+            let status = ""; // 엑셀용 상태 구분 (납입기/수령기)
+            let cashFlow = 0; // 엑셀용 현금 흐름
+
             if (age === startAge) {
-                // 첫 해는 0원부터 시작 (혹은 0원)
-                currentAsset = 0; 
+                currentAsset = 0;
+                status = "시작";
             } else if (age <= targetAge) {
-                // [적립기]
-                // 엑셀 로직: (전년도 자산 * (1+수익률)) + (월납입금 * 12)
-                // *주의: 월복리가 정확하나 엑셀 파일 로직인 '연 단위 불입'으로 단순화 구현
+                // 납입기
                 currentAsset = (currentAsset * (1 + rate)) + (monthlyAmount * 12);
+                status = "납입중";
+                cashFlow = monthlyAmount * 12;
             } else {
-                // [수령기]
-                // 엑셀 로직: (전년도 자산 * (1+수익률)) - 연간수령액
+                // 수령기
                 currentAsset = (currentAsset * (1 + rate)) - withdrawAmount;
+                status = "수령중";
+                cashFlow = -withdrawAmount;
             }
 
-            // 자산이 0 미만이 되면 멈춤 (고갈)
             if (currentAsset < 0) {
                 currentAsset = 0;
-                if (!depletionAge) depletionAge = age; // 고갈된 나이 기록
+                if (!depletionAge) depletionAge = age;
+                status = "자산고갈";
             }
 
-            // 최대 자산 기록
             if (currentAsset > maxAsset) maxAsset = currentAsset;
 
-            data.push(Math.round(currentAsset));
+            // 반올림 처리
+            const roundedAsset = Math.round(currentAsset);
+            data.push(roundedAsset);
+
+            // 엑셀용 데이터 저장
+            excelData.push({
+                "나이": age + "세",
+                "상태": status,
+                "총 자산(만원)": roundedAsset,
+                "납입/수령액(만원)": age <= startAge ? 0 : cashFlow
+            });
         }
 
-        // 3. 결과 텍스트 업데이트
+        // 4. 결과 UI 업데이트
         document.getElementById('resultSection').style.display = 'block';
+        document.getElementById('excelBtn').style.display = 'inline-block'; // 엑셀 버튼 보이기
+        
+        document.getElementById('totalPrincipal').innerText = formatMoney(totalPrincipal);
         document.getElementById('peakAge').innerText = targetAge;
         document.getElementById('peakAsset').innerText = formatMoney(maxAsset);
-        document.getElementById('displayWithdraw').innerText = withdrawAmount.toLocaleString();
         
+        const emptyEl = document.getElementById('emptyAge');
         if (depletionAge) {
-            document.getElementById('emptyAge').innerText = depletionAge;
-            document.getElementById('emptyAge').style.color = "#e74c3c"; // 빨간색
+            emptyEl.innerText = depletionAge + "세";
+            emptyEl.style.color = "#e74c3c";
         } else {
-            document.getElementById('emptyAge').innerText = "100세 이상";
-            document.getElementById('emptyAge').style.color = "#2ecc71"; // 초록색
+            emptyEl.innerText = "100세 이상 유지";
+            emptyEl.style.color = "#2ecc71";
         }
 
-        // 4. 차트 그리기 (Chart.js)
+        // 5. 차트 그리기
         drawChart(labels, data, targetAge - startAge);
     }
 
-    // 금액 포맷팅 함수 (예: 1억 5000만)
+    // 엑셀 다운로드 함수
+    function downloadExcel() {
+        if(excelData.length === 0) {
+            alert("먼저 계산하기 버튼을 눌러주세요.");
+            return;
+        }
+
+        // SheetJS 기능 사용
+        const ws = XLSX.utils.json_to_sheet(excelData); // JSON 데이터를 시트로 변환
+        const wb = XLSX.utils.book_new(); // 새 엑셀 파일 생성
+        XLSX.utils.book_append_sheet(wb, ws, "연금시뮬레이션"); // 시트 추가
+
+        // 파일 저장 (파일명: 연금계산결과_날짜.xlsx)
+        const dateStr = new Date().toISOString().slice(0,10);
+        XLSX.writeFile(wb, `연금계산결과_${dateStr}.xlsx`);
+    }
+
     function formatMoney(amount) {
         if (amount >= 10000) {
             const eok = Math.floor(amount / 10000);
             const man = Math.round(amount % 10000);
-            return eok + "억 " + (man > 0 ? man + "만" : "");
+            return eok + "억 " + (man > 0 ? man + "만" : "") + "원";
         }
-        return Math.round(amount) + "만";
+        return Math.round(amount).toLocaleString() + "만원";
     }
 
     function drawChart(labels, data, peakIndex) {
         const ctx = document.getElementById('pensionChart').getContext('2d');
-
-        // 기존 차트가 있으면 삭제 (중복 방지)
         if (myChart) myChart.destroy();
 
-        // 적립 구간과 수령 구간 색상 다르게 하기는 복잡하므로 단일 컬러 혹은 그라데이션 사용
-        // 여기서는 심플하게 파란색으로 통일하되, 배경색을 입힘
         myChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -182,7 +237,7 @@
                     backgroundColor: 'rgba(74, 144, 226, 0.1)',
                     borderWidth: 2,
                     fill: true,
-                    pointRadius: 0, // 포인트 숨김 (깔끔하게)
+                    pointRadius: 0,
                     pointHitRadius: 10,
                 }]
             },
@@ -193,20 +248,15 @@
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return formatMoney(context.raw) + "원";
+                                return formatMoney(context.raw);
                             }
                         }
                     },
                     legend: { display: false }
                 },
                 scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { borderDash: [5, 5] }
-                    },
-                    x: {
-                        grid: { display: false }
-                    }
+                    y: { beginAtZero: true, grid: { borderDash: [5, 5] } },
+                    x: { grid: { display: false } }
                 }
             }
         });
